@@ -114,7 +114,11 @@ function setZone(target,zone){
    s.power_zones={from:z,to:bounds(old.to+delta)};
   }else{s.power_zones={from:z,to:z};}
   delete s.watts;delete s.start_watts;delete s.end_watts;
- }else s.hr_zones={from:z,to:z};
+ }else{
+  const old=s.hr_zones||{from:z,to:z};
+  if(s.kind==='ramp'){const delta=z-old.from;s.hr_zones={from:z,to:bounds(old.to+delta)};}
+  else s.hr_zones={from:z,to:z};
+ }
  draw();
 }
 function listFlat(){
@@ -164,6 +168,12 @@ function targetLabel(s,zones){
   [[50,60],[60,70],[70,80],[80,90],[90,95],[95,100]];
  const lo=Math.round(base*pct[zones.from-1][0]/100),h=pct[zones.to-1][1];
  return label+' '+lo+'–'+(h===null?'∞':Math.round(base*h/100))+(view==='power'?'W':'bpm');
+}
+function groupTargetLabel(s){
+ const zones=s.steps.map(c=>chartZone(c)).filter(Boolean);
+ const unique=[...new Set(zones.map(z=>'Z'+z.from+(z.to===z.from?'':'→Z'+z.to)))];
+ if(!unique.length)return view==='hr'?'心率目标未设':'功率未校准';
+ return unique.join(' / ')+' ×'+s.repeat_count;
 }
 function shape(kind){
  if(kind==='repeat')return group();
@@ -246,15 +256,20 @@ function draw(){
       stroke:'#182a3e','stroke-width':.5,'pointer-events':'none'});bx+=cw;
     }
    }
-   svgNode('text',{x:x+w/2,y:gy-11,class:'axis','text-anchor':'middle','pointer-events':'none'}).textContent='点击展开';
+   svgNode('text',{x:x+w/2,y:gy-11,class:'axis','text-anchor':'middle','pointer-events':'none'}).textContent=
+    w>=75?groupTargetLabel(s):'×'+s.repeat_count;
   }else{
    const zones=chartZone(s),y0=zones?y(zones.from):top+85,y1=zones?y(zones.to):top+85;
    svgNode('polygon',{points:[[x,y0],[x+w,y1],[x+w,bottom],[x,bottom]].map(v=>v.join(',')).join(' '),
     fill:zones?zoneColors(zones.from):'#778ca3',opacity:zones?.9:.5,
     stroke:chosen?'white':'#0e1d2e','stroke-width':chosen?2.5:1,class:'block','data-index':i});
    // Target label belongs above the shape in the currently selected view.
-   if(w>=58)svgNode('text',{x:x+w/2,y:Math.max(17,Math.min(y0,y1)-11),
-    fill:'#e7f2ff','font-size':11,'text-anchor':'middle','pointer-events':'none'}).textContent=targetLabel(s,zones);
+   if(w>=58){
+    const full=targetLabel(s,zones),compact=zones?'Z'+zones.from+(zones.from===zones.to?'':'→Z'+zones.to):full;
+    svgNode('text',{x:x+w/2,y:Math.max(17,Math.min(y0,y1)-11),
+     fill:'#e7f2ff','font-size':11,'text-anchor':'middle','pointer-events':'none'}).textContent=
+       full.length*6.5+8<=w?full:compact;
+   }
    if(w>=70)svgNode('text',{x:x+w/2,y:bottom-42,fill:'white','font-size':12,
     'text-anchor':'middle','pointer-events':'none'}).textContent=s.name.slice(0,Math.floor(w/12));
    svgNode('text',{x:x+w/2,y:bottom-20,fill:'white','font-size':w<30?9:12,

@@ -1,4 +1,8 @@
-"""Validated, local-only workout plan library. No trainer commands are issued here."""
+"""Local workout plan catalog and zone-aware editor schema.
+
+Pure plan data: NEVER sends an FTMS command or starts a training session.
+Existing v1 absolute-watt stages remain readable/editable.
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -7,11 +11,28 @@ import json
 from pathlib import Path
 import sqlite3
 from uuid import uuid4
-
 from fastapi import Header, HTTPException
 
 PURPOSES = {"warmup", "main", "recovery", "cooldown", "custom"}
-MIN_WATTS, MAX_WATTS = 40, 500  # Planning bounds, NOT an approved FTMS device range.
+MIN_WATTS, MAX_WATTS = 40, 500   # UI/editor only, NOT hardware limits.
+# Widely used six-zone relative-power display (zone 6 intentionally open-ended).
+POWER_ZONES = [
+    {"zone": 1, "label": "恢复", "min_pct": 0, "max_pct": 55},
+    {"zone": 2, "label": "耐力", "min_pct": 55, "max_pct": 75},
+    {"zone": 3, "label": "节奏", "min_pct": 75, "max_pct": 90},
+    {"zone": 4, "label": "阈值", "min_pct": 90, "max_pct": 105},
+    {"zone": 5, "label": "VO₂", "min_pct": 105, "max_pct": 120},
+    {"zone": 6, "label": "无氧", "min_pct": 120, "max_pct": None},
+]
+# Explicitly provisional display zones, based on max HR; not individualized.
+HR_ZONES = [
+    {"zone": 1, "min_pct": 50, "max_pct": 60},
+    {"zone": 2, "min_pct": 60, "max_pct": 70},
+    {"zone": 3, "min_pct": 70, "max_pct": 80},
+    {"zone": 4, "min_pct": 80, "max_pct": 90},
+    {"zone": 5, "min_pct": 90, "max_pct": 95},
+    {"zone": 6, "min_pct": 95, "max_pct": 100},
+]
 
 
 def _integer(value, label, minimum, maximum):
@@ -26,6 +47,24 @@ def _name(value, label, length=80):
     return value.strip()
 
 
+def _zone_span(payload, label, minimum=1, maximum=6):
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} 必须是区间对象")
+    low = _integer(payload.get("from"), label + " 起始", minimum, maximum)
+    high = _integer(payload.get("to"), label + " 结束", minimum, maximum)
+    return {"from": low, "to": high}
+
+
+def _hr_band(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("心率范围必须是区间对象")
+    low = _integer(payload.get("from"), "心率下限 Z", 1, 6)
+    high = _integer(payload.get("to"), "心率上限 Z", 1, 6)
+    if low > high:
+        raise ValueError("心率区间下限不能大于上限")
+    return {"from": low, "to": high}
+
+
 def _leaf(item):
     if not isinstance(item, dict):
         raise ValueError("训练阶段必须是对象")
@@ -35,17 +74,22 @@ def _leaf(item):
     purpose = item.get("purpose", "main")
     if purpose not in PURPOSES:
         raise ValueError("未知阶段用途")
-    result = {
-        "kind": kind,
-        "purpose": purpose,
-        "name": _name(item.get("name"), "阶段名称", 60),
-        "duration_s": _integer(item.get("duration_s"), "阶段时长（秒）", 10, 7200),
-    }
-    if kind == "constant":
+    result = {"kind": kind, "purpose": purpose,
+              "name": _name(item.get("name"), "阶段名称", 60),
+              "duration_s": _integer(item.get("duration_s"), "阶段时长（秒）", 10, 7200)}
+    # Relative FTP zones can be saved WITHOUT an invented FTP or absolute watts.
+    if "power_zones" in item:
+        zones = _zone_span(item["power_zones"], "功率区间")
+        if kind == "constant" and zones["from"] != zones["to"]:
+            raise ValueError("恒定功率阶段只能选择单个功率区间")
+        result["power_zones"] = zones
+    elif kind == "constant":
         result["watts"] = _integer(item.get("watts"), "计划功率", MIN_WATTS, MAX_WATTS)
     else:
         result["start_watts"] = _integer(item.get("start_watts"), "起始功率", MIN_WATTS, MAX_WATTS)
         result["end_watts"] = _integer(item.get("end_watts"), "结束功率", MIN_WATTS, MAX_WATTS)
+    if "hr_zones" in item and item["hr_zones"] is not None:
+        result["hr_zones"] = _hr_band(item["hr_zones"])
     return result
 
 
@@ -94,6 +138,68 @@ def summarize(plan):
             length += s["duration_s"]
             leaf_count += 1
     return {"duration_s": length, "stage_count": leaf_count}
+
+
+def _stage(name, minutes, zone, purpose="main", hr=None):
+    stage = {"kind": "constant", "name": name, "purpose": purpose,
+             "duration_s": minutes * 60, "power_zones": {"from": zone, "to": zone}}
+    if hr is not None:
+        stage["hr_zones"] = {"from": hr[0], "to": hr[1]}
+    return stage
+
+
+# Templates are embedded in source and copied into the user's own editable plans.
+# Zone targets stay relative. No unmeasured FTP/HRmax or absolute watts are invented.
+_PRESETS = [
+    {"slug": "recovery-30", "name": "轻松恢复 · 30 分钟",
+     "note": "低强度活动模板，按主观轻松程度调整；不是恢复保证。",
+     "stages": [_stage("轻松开始", 5, 1, "warmup", (1, 2)),
+                _stage("恢复骑行", 20, 1, "recovery", (1, 2)),
+                _stage("放松", 5, 1, "cooldown", (1, 2))]},
+    {"slug": "endurance-45", "name": "Z2 有氧 · 45 分钟",
+     "note": "用于常规低强度有氧；骑行与跑步训练量不按时间一比一等价。",
+     "stages": [_stage("热身", 8, 1, "warmup", (1, 2)),
+                _stage("稳定耐力", 32, 2, "main", (2, 3)),
+                _stage("冷身", 5, 1, "cooldown", (1, 2))]},
+    {"slug": "tempo-40", "name": "节奏训练 · 40 分钟",
+     "note": "强度高于 Z2 的结构示例，需有骑行适应后再考虑实践。",
+     "stages": [_stage("热身", 10, 1, "warmup", (1, 2)),
+                _stage("耐力", 5, 2, "main", (2, 3)),
+                _stage("节奏", 15, 3, "main", (3, 4)),
+                _stage("耐力", 5, 2, "recovery", (2, 3)),
+                _stage("冷身", 5, 1, "cooldown", (1, 2))]},
+    {"slug": "threshold-intervals-43", "name": "阈值间歇 · 43 分钟",
+     "note": "示例模板，并非个人化处方；第一版只可编排，不能自动执行。",
+     "stages": [_stage("热身", 10, 1, "warmup", (1, 2)),
+                {"kind": "repeat", "name": "工作/恢复 × 4", "repeat_count": 4,
+                 "steps": [_stage("工作", 4, 4, "main", (3, 5)),
+                           _stage("恢复", 2, 1, "recovery", (1, 3))]},
+                _stage("冷身", 9, 1, "cooldown", (1, 2))]},
+]
+
+
+def preset_catalog():
+    return [{"slug": p["slug"], "name": p["name"], "note": p["note"],
+             **summarize(p)} for p in _PRESETS]
+
+
+def preset_by_slug(slug):
+    for item in _PRESETS:
+        if item["slug"] == slug:
+            # Return only the user-editable plan document, never an internal template.
+            return validate_plan({key: item[key] for key in ("name", "note", "stages")})
+    return None
+
+
+def validate_zone_settings(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("区间设置必须是对象")
+    result = {"ftp_w": None, "hr_max_bpm": None}
+    for field, low, high in (("ftp_w", 60, 500), ("hr_max_bpm", 100, 230)):
+        value = payload.get(field)
+        if value is not None:
+            result[field] = _integer(value, field, low, high)
+    return result
 
 
 def _utc_now():
@@ -185,6 +291,18 @@ class PlanStore:
             row = db.execute("SELECT value FROM workout_settings WHERE key='selected_plan'").fetchone()
         return self.get(row["value"]) if row else None
 
+    def get_zone_settings(self):
+        with self.db() as db:
+            row = db.execute("SELECT value FROM workout_settings WHERE key='zone_settings'").fetchone()
+            return validate_zone_settings(json.loads(row["value"])) if row else validate_zone_settings({})
+
+    def set_zone_settings(self, payload):
+        value = validate_zone_settings(payload)
+        with self.db() as db:
+            db.execute("INSERT INTO workout_settings VALUES ('zone_settings', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                       (json.dumps(value),))
+        return value
+
 
 def mount_plan_routes(app, authorize, db_path):
     """Register plan APIs against the application's existing token authentication."""
@@ -199,6 +317,32 @@ def mount_plan_routes(app, authorize, db_path):
     @app.get("/api/plans/selected")
     def selected_plan(x_cycling_token: str | None = Header(default=None)):
         return checked_store(x_cycling_token).selected()
+
+    @app.get("/api/plans/presets")
+    def get_presets(x_cycling_token: str | None = Header(default=None)):
+        checked_store(x_cycling_token)
+        return preset_catalog()
+
+    @app.post("/api/plans/presets/{slug}/copy")
+    def copy_preset(slug: str, x_cycling_token: str | None = Header(default=None)):
+        store = checked_store(x_cycling_token)
+        preset = preset_by_slug(slug)
+        if preset is None:
+            raise HTTPException(404, "预设课程不存在")
+        return store.create(preset)
+
+    @app.get("/api/plans/zones")
+    def zones(x_cycling_token: str | None = Header(default=None)):
+        return {"settings": checked_store(x_cycling_token).get_zone_settings(),
+                "power": POWER_ZONES, "heart_rate": HR_ZONES}
+
+    @app.put("/api/plans/zones")
+    def set_zones(payload: dict, x_cycling_token: str | None = Header(default=None)):
+        store = checked_store(x_cycling_token)
+        try:
+            return store.set_zone_settings(payload)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/plans/select")
     def select_plan(payload: dict, x_cycling_token: str | None = Header(default=None)):

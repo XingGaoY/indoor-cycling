@@ -138,3 +138,9 @@ curl -X POST -H "X-Cycling-Token: $CYCLING_TOKEN" http://127.0.0.1:8765/api/stop
 - `workout_settings(key TEXT PRIMARY KEY, value TEXT)`，目前存储 `selected_plan` ID。
 
 每次请求进行幂等建表，因此升级后旧 SQLite 不会丢弃原会话及 samples。备份依然遵循 [06](06-security-and-operations.md)，未来正式 schema 迁移需独立设计。删除课程不会移除旧会话（现有会话仍不包含计划快照）。
+
+## 7. 可视化编辑器区间数据与预设
+
+详见 [10](10-visual-workout-editor-design.md)。阶段可选 `power_zones: {"from":2,"to":2}` 与 `hr_zones: {"from":2,"to":3}`，数值均为 1–6；恒定功率目标只能是一个区间。存在 power_zones 时不要求任何绝对瓦数；旧 `watts/start_watts/end_watts` 仍兼容。hr_zones 下限不可超过上限。
+
+新增认证 API：GET `/api/plans/presets`，POST `/api/plans/presets/{slug}/copy`，GET/PUT `/api/plans/zones`（保存 `ftp_w` 和 `hr_max_bpm`，允许 null）。模板只读，每次主动复制生成独立用户课程；个人参考值保存在 SQLite 的 workout_settings 中，默认 null。不存在自动校准、训练执行或实际 ERG 控制。

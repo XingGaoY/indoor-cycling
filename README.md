@@ -70,6 +70,7 @@ indoor-cycling inspect '<扫描结果中的 identifier>'
 | [06 - 安全与运维](doc/06-security-and-operations.md) | 网络隔离、备份、故障排查 |
 | [07 - 能力状态与验收](doc/07-status-and-acceptance.md) | 已实现/待验证边界 |
 | [08 - 项目指令模板](doc/08-project-instructions.md) | ChatGPT Project instruction 的稳定版本 |
+| [09 - 页面与训练功能设计](doc/09-training-product-design.md) | 手机分页、课程编排、执行微调与分阶段交付设计 |
 
 ## 贡献和协作
 

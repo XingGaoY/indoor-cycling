@@ -94,3 +94,7 @@ bash scripts/macos/install-launch-agent.sh
 - 真实 ERG 控制需经过独立硬件测试与安全验收，不能因为模拟服务启动成功就视作通过。
 
 运行问题与备份说明见 [06](06-security-and-operations.md)。
+
+## BLE 心率与设备管理更新
+
+serve 现在支持通过 /devices 手动连接标准 BLE 心率设备。设备保存于同一 CYCLING_DB，重启后不自动连接。服务宿主必须获得 macOS 蓝牙权限。此变更不增加骑行台写入。

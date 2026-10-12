@@ -1,0 +1,18 @@
+HTML = """<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设备管理 · Indoor Cycling</title>
+<style>body{font:16px system-ui;background:#101827;color:#fff;margin:0}.wrap{max-width:640px;margin:auto;padding:24px}a{color:#9bbaff}article{background:#202c40;padding:18px;border-radius:16px;margin:16px 0}input,button{font:inherit;padding:12px;border-radius:9px;box-sizing:border-box}input{width:100%;margin:8px 0}button{border:0;background:#457cf0;color:white;cursor:pointer;margin:4px}button:disabled{opacity:.5}small{color:#bdc8d8}.danger{background:#ad3445}.row{border-top:1px solid #40506a;padding:12px 0}#error{color:#ffb5bd}</style>
+<div class="wrap"><div class="eyebrow">INDOOR CYCLING</div><h1>我的设备</h1><p>开启手表心率推送，靠近本机。这里只连接心率设备。</p>
+<article><label>控制令牌（当前标签页会话内保存）<input id="token" type="password" autocomplete="off" placeholder="CYCLING_TOKEN"></label></article>
+<article><h2>当前连接</h2><p id="status">输入令牌后查看</p><button id="disconnect">断开连接</button></article>
+<article><h2>已保存设备</h2><small>保存在本机，重启后保留；连接需要手动操作。</small><div id="saved"></div></article>
+<article><h2>匹配新设备</h2><button id="scan">扫描心率设备（约 10 秒）</button><div id="found"></div></article><p role="alert" id="error"></p></div>
+<script>
+const $=id=>document.getElementById(id);$('token').value=sessionStorage.getItem('cyclingToken')||'';
+$('token').addEventListener('input',()=>{sessionStorage.setItem('cyclingToken',$('token').value);});
+let busy=false;
+async function api(path,body){const r=await fetch('/api/devices'+path,{method:body===undefined?'GET':'POST',headers:{'X-Cycling-Token':$('token').value,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:'请求失败 ('+r.status+')');return data;}
+function button(label,action,parent){const b=document.createElement('button');b.textContent=label;b.onclick=()=>run(action);parent.append(b);}
+function rows(container,items,saved){$(container).replaceChildren();if(!items.length){$(container).textContent=saved?'暂无保存设备':'未发现设备，请检查心率推送与手机蓝牙占用';return;}for(const d of items){const row=document.createElement('div');row.className='row';const name=document.createElement('div');name.textContent=d.name;row.append(name);button('连接',()=>api('/connect',{identifier:d.identifier}),row);if(saved){button('移除',()=>api('/forget',{identifier:d.identifier}),row);}else{button('保存',()=>{const name=prompt('设备名称',d.name);if(name===null)return;return api('/save',{identifier:d.identifier,name});},row);}$(container).append(row);}}
+async function refresh(){if(!$('token').value||busy)return;try{const d=await api('');rows('saved',d.saved,true);rows('found',d.discovered,false);const c=d.connection;const names=[...d.saved,...d.discovered];const device=names.find(x=>x.identifier===c.identifier);$('status').textContent=(device?device.name+' · ':'')+({connected:'已连接',connecting:'连接中',disconnected:'未连接'}[c.state]||c.state)+(c.state==='connected'?(c.stale?' · 等待数据 / 数据过期':' · '+c.heart_rate_bpm+' bpm'):'')+(c.error?' · '+c.error:'');}catch(e){$('error').textContent=e.message;}}
+async function run(action){if(busy)return;busy=true;$('error').textContent='';document.querySelectorAll('button').forEach(b=>b.disabled=true);try{await action();}catch(e){$('error').textContent=e.message;}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false);await refresh();}}
+$('scan').onclick=()=>run(()=>api('/scan',{}));$('disconnect').onclick=()=>run(()=>api('/disconnect',{}));setInterval(refresh,1500);refresh();
+</script></html>"""

@@ -1,6 +1,6 @@
 # 05 · HTTP API、训练状态与本地数据
 
-**当前 API 只控制模拟器。** 不存在真实 BLE 订阅、ERG 指令、COROS 云端写入或 FIT 导出。请勿把模拟功率、心率看作实测值。
+**当前 API 只控制模拟器。** 支持可选真实 BLE 心率订阅；不存在 ERG 指令、COROS 云端写入或 FIT 导出。请勿把模拟功率、心率看作实测值。
 
 ## 1. 服务与认证
 
@@ -57,7 +57,7 @@ curl -X POST -H "X-Cycling-Token: $CYCLING_TOKEN" http://127.0.0.1:8765/api/stop
 
 时间累积基于进程中的 monotonic 时钟，运行期间记录器约每秒写一条样本；计时器不是持久状态机。**重启服务后无法自动恢复正在训练的会话**，数据库中可能保留未标记结束的 session。未来引入真实硬件控制之前需要明确 crash recovery 和安全行为。
 
-前端目前每秒轮询一次 /api/status，不是 WebSocket 实时推送；页面只缓存本次打开输入的 token，不提供持久登录。
+前端目前每秒轮询一次 /api/status，不是 WebSocket 实时推送；页面使用当前标签页 sessionStorage 保存 token，不提供长期持久登录。
 
 ## 4. SQLite schema（当前）
 
@@ -83,8 +83,16 @@ curl -X POST -H "X-Cycling-Token: $CYCLING_TOKEN" http://127.0.0.1:8765/api/stop
 | heart_rate_bpm INTEGER | 模拟心率 |
 | cadence_rpm INTEGER | 模拟踏频 |
 
-当前没有正式数据库迁移系统、同步队列、来源标签持久化和 FIT 文件生成能力。使用自定义 CYCLING_DB 时请放在不受 Git 跟踪的位置。改变 schema 必须同时更新测试、这里的字段表与备份/迁移说明，旧数据库升级前做备份。
+当前只有 heart_rate_source 的增量迁移和来源标记，没有通用迁移系统、同步队列或 FIT 文件生成能力。使用自定义 CYCLING_DB 时请放在不受 Git 跟踪的位置。改变 schema 必须同时更新测试、这里的字段表与备份/迁移说明，旧数据库升级前做备份。
 
 ## 5. 数据归档原则
 
 实际训练数据未来以本地原始采样和事件为权威来源，再计算摘要、导出 FIT、尝试经正式验证的 COROS 同步。同步必须可重试且避免重复上传；当前以上仅为发展原则，非已交付能力。安全运维见 [06](06-security-and-operations.md)。
+
+## BLE 心率与设备管理更新
+
+新增认证接口 GET /api/devices，POST /api/devices/scan、/save（identifier,name）、/connect（identifier）、/disconnect、/forget（identifier）。设备表 devices(identifier TEXT PRIMARY KEY,name TEXT NOT NULL)。samples 自动追加 heart_rate_source TEXT NOT NULL DEFAULT SIMULATOR，旧数据保持 SIMULATOR；迁移前请备份数据库。状态新增 heart_rate_source 和 heart_rate_device（state,identifier,heart_rate_bpm,age_s,stale,error）。选择真实设备后断连/超过 5 秒无数据为 null，来源仍 BLE；主动断开回到模拟器。模拟训练中记录的 BLE 心率不会使功率/踏频变为实测，混合会话不能视为真实训练记录。
+
+## 手机多页面布局
+
+底部导航提供训练（/）、设备（/devices）和记录（/history）三页，共享标签页访问凭证。触控控件至少 48px，兼容手机安全区。记录通过认证 GET /api/history 读取最近 50 条本机会话，并标注模拟训练和 BLE 心率来源。切换页面不停止后台训练或设备连接。当前服务仍监听本机；手机实机访问需要后续可信 HTTPS 与访问方案，当前未完成离线 PWA 安装能力。

@@ -6,8 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = [ROOT / "README.md", *sorted((ROOT / "doc").glob("*.md"))]
 
 def test_expected_documentation():
-    assert len(DOCS) == 10
-    assert [p.name[:2] for p in DOCS[1:]] == [f"{i:02d}" for i in range(1, 10)]
+    assert len(DOCS) == 11
+    assert [p.name[:2] for p in DOCS[1:]] == [f"{i:02d}" for i in range(1, 11)]
     assert all(p.is_file() for p in DOCS)
 
 def test_relative_markdown_links():

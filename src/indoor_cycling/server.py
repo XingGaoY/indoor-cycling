@@ -259,3 +259,13 @@ async def history(x_cycling_token: str | None = Header(default=None)):
         return [dict(row) for row in db.execute("""SELECT id,started_at,ended_at,duration_s,
             EXISTS(SELECT 1 FROM samples WHERE session_id=sessions.id AND heart_rate_source='BLE') AS has_ble
             FROM sessions ORDER BY started_at DESC LIMIT 50""")]
+
+# Local workout plan library: design and storage only, never hardware control.
+from .plans import mount_plan_routes
+mount_plan_routes(app, authorize, lambda: DB)
+
+@app.get('/plans', response_class=HTMLResponse)
+async def plans_page():
+    from .plans_page import HTML as plans_html
+    from .mobile import shell
+    return shell(plans_html, '/plans')

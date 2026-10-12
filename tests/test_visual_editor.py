@@ -124,6 +124,8 @@ def test_timeline_shape_toolbar_and_uniform_time_scale():
     assert "shortDuration" not in page or "块内" in page
     assert "stageDuration(s)" in page
     assert "targetLabel(s,zones)" in page
+    assert "groupTargetLabel(s)" in page
+    assert "old.to+delta" in page  # relative ramp shape kept when dragging
     assert "expandedGroups.has(s)" in page
     assert "id=\"palette\"" not in page
     assert "id=\"addConstant\"" not in page

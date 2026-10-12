@@ -3,13 +3,17 @@ HTML = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>可视化课程编排 · Indoor Cycling</title><style></style>
 <style id="timeline-style">
-.picker{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
-.zonechip{padding:8px 13px;min-height:44px;min-width:48px;border:1px solid #475b73;background:#263a53;touch-action:none}
-.zonechip[aria-pressed=true]{outline:2px solid #83e1c3}
+.workbench{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px}
+.shape-tools{display:flex;flex-direction:column;gap:8px;align-self:start}
+.shape-tools strong{text-align:center;font-size:12px;color:#afc7db}
+.shape-tool{min-width:64px;min-height:76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;margin:0;padding:6px;background:#263a53;border:1px solid #49617a;touch-action:none}
+.shape-tool svg{width:45px;height:28px}.shape-tool span{font-size:11px}.shape-tool:focus-visible{outline:2px solid #83e1c3}
+.zoom-tools{display:flex;gap:8px;align-items:center;padding:10px 0}.zoom-tools button{min-width:44px;margin:0}
+@media(max-width:420px){.workbench{grid-template-columns:60px minmax(0,1fr);gap:5px}.shape-tool{min-width:56px}}
 .chartframe{overflow-x:auto;overflow-y:hidden;border:1px solid #33445b;border-radius:14px;background:#101d30}
-.timeline{display:block;touch-action:pan-x;min-height:285px}
+.timeline{display:block;touch-action:pan-x;min-height:355px}
 .timeline .block{cursor:pointer;touch-action:none}
-.timeline .handle{cursor:ew-resize;touch-action:none}
+.timeline .handle{cursor:ew-resize;touch-action:none}.timeline .group-block{cursor:pointer;touch-action:none}
 .timeline .axis{font:12px system-ui;fill:#bfd0df}
 .timeline .zoneaxis{font:12px system-ui;fill:#bfd0df}
 .segment-editor{background:#1e3048;border:1px solid #43617c;border-radius:15px;padding:14px;margin:15px 0}
@@ -47,17 +51,17 @@ fieldset input{margin-top:4px}
 </article>
 <article>
 <div role="tablist" aria-label="课程图表"><button role="tab" id="powerTab" class="charttab" aria-selected="true">功率 Z1–Z6</button><button role="tab" id="hrTab" class="charttab" aria-selected="false">心率 Z1–Z6</button></div>
-<p class="tiny" id="guide">横轴时长、纵轴区间。点选块编辑；上下拖动改变区间；拖动右侧把手改变时长。间歇组中修改一个子阶段会应用到全部重复。</p>
-<div class="picker" id="palette" aria-label="新增区间块"></div>
-<div class="chartframe" id="chartFrame"><svg id="chart" class="timeline" role="img" aria-label="训练阶段时间轴"></svg></div>
-<p class="tiny">可将上方 Z 区间拖进时间轴插入，或点击追加。触屏上也可点选下面的阶段进行精确编辑。</p>
+<p class="tiny" id="guide">从左侧选择形状，拖入时间轴插入，或点击追加。块内标时长，块上方显示当前目标。</p>
+<div class="workbench">
+<aside class="shape-tools" aria-label="形状工具栏"><strong>形状</strong>
+<button class="shape-tool" type="button" data-shape="constant" aria-label="添加恒定方块"><svg viewBox="0 0 48 30" aria-hidden="true"><rect x="4" y="6" width="40" height="20" fill="#1cb7a5"/></svg><span>恒定</span></button>
+<button class="shape-tool" type="button" data-shape="rise" aria-label="添加递增梯形"><svg viewBox="0 0 48 30" aria-hidden="true"><path d="M4 26V21L44 5V26Z" fill="#d0b751"/></svg><span>递增</span></button>
+<button class="shape-tool" type="button" data-shape="fall" aria-label="添加递减梯形"><svg viewBox="0 0 48 30" aria-hidden="true"><path d="M4 5L44 21V26H4Z" fill="#ee9951"/></svg><span>递减</span></button>
+<button class="shape-tool" type="button" data-shape="repeat" aria-label="添加间歇组"><svg viewBox="0 0 48 30" aria-hidden="true"><rect x="3" y="8" width="13" height="18" fill="#e16d71"/><rect x="18" y="17" width="10" height="9" fill="#778ca3"/><rect x="30" y="8" width="15" height="18" fill="#e16d71"/></svg><span>间歇组</span></button>
+</aside><div class="chartframe" id="chartFrame"><svg id="chart" class="timeline" role="img" aria-label="从零开始的连续时间轴"></svg></div></div>
+<div class="zoom-tools"><span class="tiny">时间缩放</span><button id="zoomOut" type="button" aria-label="缩小时间轴">−</button><output id="zoomValue">24 px/min</output><button id="zoomIn" type="button" aria-label="放大时间轴">＋</button></div>
+<p class="tiny">横轴统一按时间比例绘制，从 0:00 开始；点选块精确编辑。间歇组合块可点击展开。</p>
 <div id="selection" class="segment-editor" hidden></div>
-</article>
-<article><h2>添加结构</h2>
-<button id="addConstant">＋ 恒定区间</button>
-<button id="addRamp">＋ 递增／递减</button>
-<button id="addRepeat">＋ 间歇组</button>
-<p class="tiny">间歇组第一版支持一层重复。通过点选图表中块或下方列表进入编辑。</p>
 </article>
 <article><h2>阶段列表（辅助操作）</h2><div id="stages"></div></article>
 <article><button id="save">保存课程</button><button id="back">返回列表</button>
@@ -69,7 +73,7 @@ fieldset input{margin-top:4px}
 const $=id=>document.getElementById(id), tok=$('token'), NS='http://www.w3.org/2000/svg';
 tok.value=sessionStorage.getItem('cyclingToken')||'';
 tok.oninput=()=>{sessionStorage.setItem('cyclingToken',tok.value);refresh();};
-let draft=null,editId=null,selected=null, view='power', focus=null, timeline=[], chartWidth=720, pointer=null;
+let draft=null,editId=null,selected=null, view='power', focus=null, timeline=[], chartWidth=720, pointer=null, pxPerMinute=24, expandedGroups=new WeakSet();
 let zoneSettings={ftp_w:null,hr_max_bpm:null};
 const colors=['#778ca3','#1cb7a5','#d0b751','#ee9951','#e16d71','#a18cf0'];
 const purposes={warmup:'热身',main:'主训练',recovery:'恢复',cooldown:'冷身',custom:'自定义'};
@@ -114,15 +118,16 @@ function setZone(target,zone){
  draw();
 }
 function listFlat(){
- const result=[];
+ const list=[];
  draft.stages.forEach((s,index)=>{
   if(s.kind==='repeat'){
-   for(let repeat=0;repeat<s.repeat_count;repeat++)
-    s.steps.forEach((step,stepIndex)=>result.push({stage:step,index,step:stepIndex,repeat}));
-  }else result.push({stage:s,index,step:null,repeat:0});
+   if(!expandedGroups.has(s)){list.push({stage:s,index,step:null,group:true});return;}
+   for(let rep=0;rep<s.repeat_count;rep++)s.steps.forEach((step,stepIndex)=>list.push({stage:step,index,step:stepIndex,group:false}));
+  }else list.push({stage:s,index,step:null,group:false});
  });
- return result;
+ return list;
 }
+function stageDuration(s){return s.kind==='repeat'?s.repeat_count*s.steps.reduce((n,x)=>n+x.duration_s,0):s.duration_s;}
 function fmt(sec){const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0');}
 function summary(){
  if(!draft)return;
@@ -147,121 +152,165 @@ function chartZone(s){
  }
  return null;
 }
+function targetLabel(s,zones){
+ if(!zones)return view==='hr'?'心率未设置':'FTP 未校准';
+ if(view==='power'&&!s.power_zones){
+  return s.kind==='constant'?s.watts+' W':s.start_watts+'→'+s.end_watts+' W';
+ }
+ const label='Z'+zones.from+(zones.from===zones.to?'':'→Z'+zones.to);
+ const base=view==='power'?zoneSettings.ftp_w:zoneSettings.hr_max_bpm;
+ if(!base)return label;
+ const pct=view==='power'?[[0,55],[55,75],[75,90],[90,105],[105,120],[120,null]]:
+  [[50,60],[60,70],[70,80],[80,90],[90,95],[95,100]];
+ const lo=Math.round(base*pct[zones.from-1][0]/100),h=pct[zones.to-1][1];
+ return label+' '+lo+'–'+(h===null?'∞':Math.round(base*h/100))+(view==='power'?'W':'bpm');
+}
+function shape(kind){
+ if(kind==='repeat')return group();
+ let s;
+ if(kind==='rise')s={...leaf('ramp',1),name:'递增',power_zones:{from:1,to:3}};
+ else if(kind==='fall')s={...leaf('ramp',3),name:'递减',power_zones:{from:3,to:1}};
+ else s=leaf('constant',2);
+ if(view==='hr')s.hr_zones=kind==='rise'?{from:1,to:3}:kind==='fall'?{from:3,to:1}:{from:2,to:2};
+ return s;
+}
+function addShape(kind,at=draft.stages.length){
+ const index=Math.max(0,Math.min(at,draft.stages.length));
+ draft.stages.splice(index,0,shape(kind));focus={index,step:null};
+ draw();msg('形状已添加，可在下方精确编辑');
+}
+function initShapeTools(){
+ for(const button of document.querySelectorAll('[data-shape]')){
+  let origin=null,skipClick=false;
+  button.addEventListener('pointerdown',e=>{origin={x:e.clientX,y:e.clientY};skipClick=false;button.setPointerCapture(e.pointerId);});
+  button.addEventListener('pointerup',e=>{
+   if(!origin)return;const distance=Math.hypot(e.clientX-origin.x,e.clientY-origin.y);origin=null;
+   if(distance<15)return;
+   skipClick=true;
+   const rect=$('chartFrame').getBoundingClientRect();
+   if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom){
+    msg('请把形状放进时间轴，或直接点击图标追加。');return;
+   }
+   const x=$('chartFrame').scrollLeft+e.clientX-rect.left;
+   const next=timeline.find(t=>x<t.x+t.w/2);
+   addShape(button.dataset.shape,next?next.index:draft.stages.length);
+  });
+  button.addEventListener('pointercancel',()=>{origin=null;});
+  button.addEventListener('click',()=>{if(skipClick){skipClick=false;return;}addShape(button.dataset.shape);});
+ }
+}
 function draw(){
  if(!draft)return;summary();
- const current=$('chart');current.replaceChildren();timeline=[];
- const flats=listFlat(), total=flats.reduce((n,v)=>n+v.stage.duration_s,0);
- // 2.5 px/minute, minimum 62 px/expanded stage, to keep blocks touch-friendly.
- const widths=flats.map(v=>Math.max(62,v.stage.duration_s/60*2.5));
- chartWidth=Math.max(410,widths.reduce((a,b)=>a+b,0)+132);
- current.setAttribute('width',chartWidth);current.setAttribute('height',290);
- current.setAttribute('viewBox','0 0 '+chartWidth+' 290');
- const top=35,bottom=253,left=114;const h=(bottom-top)/6;
- function y(zone){return bottom-(zone-.5)*h;}
- function zonelabel(z){
-  const pct = view==='power' ? [[0,55],[55,75],[75,90],[90,105],[105,120],[120,null]][z-1] :
-    [[50,60],[60,70],[70,80],[80,90],[90,95],[95,100]][z-1];
-  const basis=view==='power'?zoneSettings.ftp_w:zoneSettings.hr_max_bpm;
-  return basis ? 'Z'+z+' · '+Math.round(basis*pct[0]/100)+'–'+(pct[1]===null?'∞':Math.round(basis*pct[1]/100))+(view==='power'?' W':' bpm') : 'Z'+z;
- }
+ const svg=$('chart');svg.replaceChildren();timeline=[];
+ const parts=listFlat(),seconds=parts.reduce((n,t)=>n+stageDuration(t.stage),0);
+ // Exactly one scale across all segments, including expanded interval children.
+ const left=106,top=76,bottom=307,band=(bottom-top)/6,plot=seconds/60*pxPerMinute;
+ chartWidth=Math.max(390,left+plot+30);
+ svg.setAttribute('width',chartWidth);svg.setAttribute('height',365);
+ svg.setAttribute('viewBox','0 0 '+chartWidth+' 365');
+ $('zoomValue').textContent=pxPerMinute+' px/min';
+ const y=z=>bottom-(z-.5)*band;
+ const pct=view==='power'?[[0,55],[55,75],[75,90],[90,105],[105,120],[120,null]]:
+  [[50,60],[60,70],[70,80],[80,90],[90,95],[95,100]];
+ const basis=view==='power'?zoneSettings.ftp_w:zoneSettings.hr_max_bpm;
  for(let z=1;z<=6;z++){
-  const cy=y(z);svgNode('line',{x1:106,y1:cy+h/2,x2:chartWidth-9,y2:cy+h/2,stroke:'#34506b','stroke-width':1});
-  const label=svgNode('text',{x:6,y:cy+4,class:'zoneaxis'});label.textContent=zonelabel(z);
+  const cy=y(z),p=pct[z-1];
+  svgNode('line',{x1:left,y1:cy+band/2,x2:chartWidth-10,y2:cy+band/2,stroke:'#38536d'});
+  svgNode('text',{x:5,y:cy+4,class:'zoneaxis'}).textContent=basis?'Z'+z+' '+Math.round(basis*p[0]/100)+'–'+(p[1]===null?'∞':Math.round(basis*p[1]/100)):'Z'+z;
  }
- let x=left, seconds=0;
- svgNode('text',{x:left,y:18,class:'axis'}).textContent='0:00';
- flats.forEach((v,i)=>{
-  const s=v.stage,w=widths[i],zones=chartZone(s);
-  timeline.push({...v,x,w,start_s:seconds});seconds+=s.duration_s;
-  if(zones){
-   const y0=y(zones.from),y1=y(zones.to);
-   const polygon=svgNode('polygon',{points:[[x,y0],[x+w,y1],[x+w,bottom],[x,bottom]].map(a=>a.join(',')).join(' '),
-    fill:zoneColors(zones.from),opacity:.86,stroke:'#112235','stroke-width':1,
-    class:'block','data-index':i});
-   if(focus&&focus.index===v.index&&focus.step===v.step)
-    polygon.setAttribute('stroke','#fff');
+ const step=seconds<=1800?5:seconds<=5400?10:15;
+ for(let minute=0;minute*60<=seconds;minute+=step){
+  const x=left+minute*pxPerMinute;
+  svgNode('line',{x1:x,y1:top,x2:x,y2:bottom+6,stroke:'#4b6987',
+   'stroke-width':minute===0?2:1,'stroke-dasharray':minute===0?'none':'3 6'});
+  svgNode('text',{x,y:bottom+28,class:'axis','text-anchor':'middle'}).textContent=fmt(minute*60);
+ }
+ svgNode('line',{x1:left,y1:bottom,x2:left+plot,y2:bottom,stroke:'#c4dbea','stroke-width':2});
+ let elapsed=0;
+ parts.forEach((t,i)=>{
+  const s=t.stage,d=stageDuration(s),x=left+elapsed/60*pxPerMinute,w=d/60*pxPerMinute;
+  timeline.push({...t,x,w});elapsed+=d;
+  const chosen=focus?.index===t.index&&focus?.step===t.step;
+  if(t.group){
+   const gy=top+58;
+   svgNode('rect',{x,y:gy,width:w,height:bottom-gy,rx:5,fill:'#273e54',
+    stroke:chosen?'white':'#82e3c6','stroke-width':chosen?2.5:1.5,class:'group-block','data-index':i});
+   if(w>=58){
+    svgNode('text',{x:x+w/2,y:gy+26,'text-anchor':'middle',fill:'white','font-size':12,'pointer-events':'none'}).textContent='间歇 ×'+s.repeat_count;
+    svgNode('text',{x:x+w/2,y:gy+49,'text-anchor':'middle',fill:'white','font-size':12,'pointer-events':'none'}).textContent=fmt(d);
+    const cycle=s.steps.reduce((n,c)=>n+c.duration_s,0);let bx=x;
+    for(let j=0;j<s.repeat_count;j++)for(const c of s.steps){
+     const cw=w*c.duration_s/(cycle*s.repeat_count);
+     // Miniature pattern, still inside a single collapsed group.
+     svgNode('rect',{x:bx,y:bottom-35,width:cw,height:35,fill:zoneColors(chartZone(c)?.from??2),
+      stroke:'#182a3e','stroke-width':.5,'pointer-events':'none'});bx+=cw;
+    }
+   }
+   svgNode('text',{x:x+w/2,y:gy-11,class:'axis','text-anchor':'middle','pointer-events':'none'}).textContent='点击展开';
   }else{
-   svgNode('rect',{x,y:top+6,width:w,height:bottom-top-6,fill:'#334155',opacity:.42,
-     stroke:'#a8bbcf','stroke-dasharray':'5 4',class:'block','data-index':i});
+   const zones=chartZone(s),y0=zones?y(zones.from):top+85,y1=zones?y(zones.to):top+85;
+   svgNode('polygon',{points:[[x,y0],[x+w,y1],[x+w,bottom],[x,bottom]].map(v=>v.join(',')).join(' '),
+    fill:zones?zoneColors(zones.from):'#778ca3',opacity:zones?.9:.5,
+    stroke:chosen?'white':'#0e1d2e','stroke-width':chosen?2.5:1,class:'block','data-index':i});
+   // Target label belongs above the shape in the currently selected view.
+   if(w>=58)svgNode('text',{x:x+w/2,y:Math.max(17,Math.min(y0,y1)-11),
+    fill:'#e7f2ff','font-size':11,'text-anchor':'middle','pointer-events':'none'}).textContent=targetLabel(s,zones);
+   if(w>=70)svgNode('text',{x:x+w/2,y:bottom-42,fill:'white','font-size':12,
+    'text-anchor':'middle','pointer-events':'none'}).textContent=s.name.slice(0,Math.floor(w/12));
+   svgNode('text',{x:x+w/2,y:bottom-20,fill:'white','font-size':w<30?9:12,
+    'text-anchor':'middle','pointer-events':'none'}).textContent=d%60===0?(d/60)+'分':fmt(d);
+   if(w>=25)svgNode('rect',{x:x+w-17,y:Math.min(y0,y1),width:17,height:bottom-Math.min(y0,y1),
+    fill:'white',opacity:.08,class:'handle','data-index':i,'data-resize':'true'});
   }
-  const text=svgNode('text',{x:x+5,y:bottom-14,fill:'#fff','font-size':11,'pointer-events':'none'});
-  text.textContent=w>=74?s.name.slice(0,8):'';
-  const cap=svgNode('text',{x:x+4,y:bottom+14,class:'axis'});cap.textContent=fmt(seconds);
-  // Expanded interval steps share underlying data, intentionally.
-  svgNode('rect',{x:x+w-22,y:top,width:22,height:bottom-top,fill:'#ffffff',opacity:0,
-   class:'handle','data-index':i,'data-resize':'true'});
-  x+=w;
  });
- current.querySelectorAll('[data-index]').forEach(node=>{
-  node.addEventListener('pointerdown',chartPointerDown);
- });
- $('powerTab').setAttribute('aria-selected',view==='power');
- $('hrTab').setAttribute('aria-selected',view==='hr');
- const label=view==='power'?'功率':'心率';
- $('guide').textContent='横轴时间、纵轴'+label+' Z1–Z6；点选块编辑，上下拖动选择区间，拖动块右边缘改变时长（30 秒步进）。';
+ svg.querySelectorAll('[data-index]').forEach(n=>n.addEventListener('pointerdown',chartPointerDown));
+ $('powerTab').setAttribute('aria-selected',view==='power');$('hrTab').setAttribute('aria-selected',view==='hr');
+ $('guide').textContent='左侧选择形状；块内为时长，块上方为'+(view==='power'?'功率':'心率')+'目标，时间从 0:00 开始。';
  renderSelection();renderStages();
 }
 function chartPointerDown(e){
- if(!draft)return;
- const i=Number(e.currentTarget.dataset.index),item=timeline[i];
- pointer={i,startX:e.clientX,startY:e.clientY,resizing:!!e.currentTarget.dataset.resize,
-  duration:item.stage.duration_s};
+ const i=Number(e.currentTarget.dataset.index),t=timeline[i];
+ pointer={i,x:e.clientX,y:e.clientY,resizing:e.currentTarget.dataset.resize==='true',duration:t.stage.duration_s};
  e.currentTarget.setPointerCapture(e.pointerId);
  e.currentTarget.addEventListener('pointerup',chartPointerUp,{once:true});
+ e.currentTarget.addEventListener('pointercancel',()=>{pointer=null;},{once:true});
  e.preventDefault();
 }
 function chartPointerUp(e){
- if(!pointer)return;
- const p=pointer;pointer=null;
- const item=timeline[p.i];if(!item)return;
- focus={index:item.index,step:item.step};
- const dx=e.clientX-p.startX,dy=e.clientY-p.startY;
- if(p.resizing){
-  // SVG has 1 CSS pixel per local x unit due to matching width/viewbox.
-  const newSecs=Math.round((p.duration+dx/item.w*item.stage.duration_s)/30)*30;
-  item.stage.duration_s=Math.max(30,Math.min(7200,newSecs));
+ if(!pointer)return;const p=pointer;pointer=null;
+ const t=timeline[p.i];if(!t)return;
+ const dx=e.clientX-p.x,dy=e.clientY-p.y;
+ focus={index:t.index,step:t.step};
+ if(t.group){
+  const s=draft.stages[t.index];expandedGroups.has(s)?expandedGroups.delete(s):expandedGroups.add(s);
   draw();return;
  }
- if(Math.abs(dy)>22){
-  const start=chartZone(item.stage)?.from??2;
-  setZone(item,Math.round(start-dy/36));return;
+ if(p.resizing){
+  t.stage.duration_s=Math.max(30,Math.min(7200,Math.round((p.duration+dx/pxPerMinute*60)/30)*30));
+  draw();return;
+ }
+ if(Math.abs(dy)>20&&Math.abs(dy)>Math.abs(dx)){
+  const z=chartZone(t.stage)?.from??2;
+  setZone(t,Math.round(z-dy/((307-76)/6)));return;
  }
  draw();
-}
-function renderPalette(){
- const p=$('palette');p.replaceChildren();
- for(let z=1;z<=6;z++){
-  const chip=el('button','＋ Z'+z,'zonechip');chip.type='button';
-  chip.style.borderBottom='4px solid '+zoneColors(z);
-  chip.title='点击追加，或拖入时间轴插入 Z'+z;
-  chip.onpointerdown=e=>{
-   const sx=e.clientX,sy=e.clientY;
-   chip.setPointerCapture(e.pointerId);
-   chip.onpointerup=up=>{
-    chip.onpointerup=null;
-    const bounds=$('chart').getBoundingClientRect();
-    const inside=up.clientX>=bounds.left&&up.clientX<=bounds.right&&up.clientY>=bounds.top&&up.clientY<=bounds.bottom;
-    let pos=draft.stages.length;
-    if(inside){
-     const localX=(up.clientX-bounds.left)*chartWidth/bounds.width;
-     const item=timeline.find(v=>localX<v.x+v.w/2);
-     if(item)pos=item.index;
-    }
-    const part=leaf('constant',z);
-    if(view==='hr'){part.hr_zones={from:z,to:z};}
-    draft.stages.splice(pos,0,part);
-    focus={index:pos,step:null};
-    draw();
-   };
-  };
-  p.append(chip);
- }
 }
 function renderSelection(){
  const root=$('selection');root.replaceChildren();
  if(!focus||!draft.stages[focus.index]){root.hidden=true;return;}
  let s=stageAt(focus);if(!s){root.hidden=true;return;}
  root.hidden=false;root.append(el('h2',s.name));
+ if(s.kind==='repeat'){
+  root.append(el('p','组合块：'+s.repeat_count+' 组 · '+fmt(stageDuration(s)),'tiny'));
+  field(root,'名称',s.name,v=>s.name=v);
+  field(root,'重复次数',s.repeat_count,v=>s.repeat_count=Number(v));
+  button(root,expandedGroups.has(s)?'折叠间歇':'展开间歇',()=>{
+   expandedGroups.has(s)?expandedGroups.delete(s):expandedGroups.add(s);draw();
+  });
+  button(root,'编辑组内第一段',()=>{expandedGroups.add(s);focus={index:focus.index,step:0};draw();});
+  return;
+ }
+
  const groupStage=focus.step!==null;
  if(groupStage)root.append(el('p','编辑的是重复组的子阶段，所有重复轮次共享此设置。','tiny'));
  field(root,'阶段名称',s.name,v=>s.name=v);
@@ -328,7 +377,7 @@ function renderStages(){
  draft.stages.forEach((s,index)=>{
   const line=el('div',(index+1)+' · '+s.name+(s.kind==='repeat'?' ×'+s.repeat_count:''),'row');
   button(line,'编辑',()=>{
-   if(s.kind==='repeat'){focus={index,step:0};}else focus={index,step:null};
+   focus={index,step:null};
    draw();$('selection').scrollIntoView({block:'nearest',behavior:'smooth'});
   });
   if(s.kind==='repeat'){
@@ -345,14 +394,14 @@ function renderStages(){
  });
 }
 function open(plan){
- editId=plan?.id??null;focus=null;view='power';
+ editId=plan?.id??null;focus=null;view='power';expandedGroups=new WeakSet();
  draft=plan?clone({name:plan.name,note:plan.note,stages:plan.stages}):
   {name:'新课程',note:'',stages:[{...leaf('constant',1),name:'热身',purpose:'warmup'}]};
  $('name').value=draft.name;$('note').value=draft.note;
  $('heading').textContent=editId?'编辑课程':'新建课程';
  $('library').hidden=true;$('editor').hidden=false;
  $('ftp').value=zoneSettings.ftp_w??'';$('maxhr').value=zoneSettings.hr_max_bpm??'';
- draw();renderPalette();msg('');
+ draw();msg('');
 }
 async function refresh(){
  if(!tok.value)return;
@@ -392,9 +441,9 @@ async function refresh(){
 $('new').onclick=()=>open(null);
 $('powerTab').onclick=()=>{view='power';draw();};
 $('hrTab').onclick=()=>{view='hr';draw();};
-$('addConstant').onclick=()=>{draft.stages.push(leaf());focus={index:draft.stages.length-1,step:null};draw();};
-$('addRamp').onclick=()=>{draft.stages.push(leaf('ramp'));focus={index:draft.stages.length-1,step:null};draw();};
-$('addRepeat').onclick=()=>{draft.stages.push(group());focus={index:draft.stages.length-1,step:0};draw();};
+$('zoomOut').onclick=()=>{pxPerMinute=Math.max(12,pxPerMinute-6);draw();};
+$('zoomIn').onclick=()=>{pxPerMinute=Math.min(72,pxPerMinute+6);draw();};
+initShapeTools();
 $('savezones').onclick=async()=>{
  try{
   const ftp=$('ftp').value,hr=$('maxhr').value;

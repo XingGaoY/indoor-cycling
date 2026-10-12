@@ -106,3 +106,24 @@ def test_presets_zones_api_and_editor(tmp_path, monkeypatch):
         for expected in ("功率 Z1–Z6", "心率 Z1–Z6", "id=\"chart\"", "id=\"presets\"",
                          "pointerdown", "chartPointerDown", "训练计划"):
             assert expected in html
+
+
+def test_timeline_shape_toolbar_and_uniform_time_scale():
+    from indoor_cycling.plans_page import HTML
+    from indoor_cycling.mobile import shell
+    page = shell(HTML, "/plans")
+    # Drawing contracts: one elapsed-time scale, no artificial per-stage width minimum.
+    for shape in ("constant", "rise", "fall", "repeat"):
+        assert 'data-shape="' + shape + '"' in page
+    assert 'aria-label="形状工具栏"' in page
+    assert "const x=left+minute*pxPerMinute" in page
+    assert "w=d/60*pxPerMinute" in page
+    assert "x=left+elapsed/60*pxPerMinute" in page
+    assert "Math.max(62" not in page
+    assert "id=\"zoomIn\"" in page and "id=\"zoomOut\"" in page
+    assert "shortDuration" not in page or "块内" in page
+    assert "stageDuration(s)" in page
+    assert "targetLabel(s,zones)" in page
+    assert "expandedGroups.has(s)" in page
+    assert "id=\"palette\"" not in page
+    assert "id=\"addConstant\"" not in page
